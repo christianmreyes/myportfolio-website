@@ -1,19 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
 
-    <title>My Portfolio</title>
+  <link rel="icon" type="image/png" href="images/profile-logo-circle.png" />
 
-    <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Christian M. Reyes</title>
+
+  <meta name="description" content="Portfolio of Christian M. Reyes, a Computer Science graduate with experience in mobile application development, Flutter, Firebase, APIs, UI/UX, and software development." />
+
+  <meta property="og:title" content="Christian M. Reyes | Computer Science Graduate & Software Developer" />
+  <meta property="og:description" content="Portfolio of Christian M. Reyes, a Computer Science graduate with experience in mobile application development, Flutter, Firebase, APIs, UI/UX, and software development." />
+  <meta property="og:type" content="website" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
+  <div id="root"></div>
 
-    <h1>Hello! Welcome to My Portfolio</h1>
-    <p>Computer Science Graduate</p>
+  <!-- React runtime (no build step needed) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel Standalone transpiles the JSX in script.js right in the browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" crossorigin></script>
 
-    <script src="script.js"></script>
+  <script type="text/babel" data-presets="react" src="script.js"></script>
 </body>
 </html>
