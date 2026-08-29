@@ -37,6 +37,7 @@ const ChevronUp = (p) => <Icon {...p}><polyline points="6 15 12 9 18 15" /></Ico
 const ExternalLink = (p) => <Icon {...p}><path d="M14 4h6v6" /><line x1="20" y1="4" x2="11" y2="13" /><path d="M19 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" /></Icon>;
 const Code2 = (p) => <Icon {...p}><polyline points="9 8 5 12 9 16" /><polyline points="15 8 19 12 15 16" /></Icon>;
 const CheckCircle2 = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><polyline points="8 12.5 11 15.5 16 9" /></Icon>;
+const AlertCircle = (p) => <Icon {...p}><circle cx="12" cy="12" r="9" /><line x1="12" y1="7.5" x2="12" y2="13" /><circle cx="12" cy="16.3" r="0.6" fill="currentColor" /></Icon>;
 const Award = (p) => <Icon {...p}><circle cx="12" cy="8" r="5" /><path d="M8.5 12.5 7 21l5-3 5 3-1.5-8.5" /></Icon>;
 const GraduationCap = (p) => <Icon {...p}><path d="M2 9l10-5 10 5-10 5-10-5z" /><path d="M6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5" /></Icon>;
 const Sparkles = (p) => <Icon {...p}><path d="M12 3v4M12 17v4M4 12h4M16 12h4M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2" /></Icon>;
@@ -2147,11 +2148,59 @@ function Achievements({ reduced }) {
 /* CONTACT                                                                  */
 /* ----------------------------------------------------------------------- */
 
-function FloatingField({ label, type = "text", name, value, onChange, error, textarea }) {
+/**
+ * Encodes a plain object as an application/x-www-form-urlencoded string,
+ * which is the body format Netlify Forms expects for AJAX submissions.
+ * Kept separate from the component so the submission mechanics can be
+ * unit-tested or swapped out without touching any JSX.
+ */
+function encodeFormData(data) {
+  return Object.keys(data)
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
+    .join("&");
+}
+
+/**
+ * Posts a submission to Netlify Forms. Netlify intercepts POSTs to any URL
+ * on the site as long as the body contains a "form-name" field matching a
+ * form it detected at deploy time, so this can simply POST to "/".
+ * Returns the fetch Response so the caller can check response.ok.
+ */
+function submitToNetlifyForm(formName, fields) {
+  return fetch("/", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: encodeFormData({ "form-name": formName, ...fields }),
+  });
+}
+
+function FloatingField({ label, type = "text", name, value, onChange, error, textarea, autoGrow, minHeight = 120, maxHeight = 280 }) {
   const Tag = textarea ? "textarea" : "input";
+  const areaRef = useRef(null);
+
+  useEffect(() => {
+    if (!textarea || !autoGrow || !areaRef.current) return;
+    const el = areaRef.current;
+    el.style.height = `${minHeight}px`;
+    const nextHeight = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+    el.style.height = `${nextHeight}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [value, textarea, autoGrow, minHeight, maxHeight]);
+
   return (
     <div className={`field ${value ? "filled" : ""} ${error ? "has-error" : ""}`}>
-      <Tag id={name} name={name} type={textarea ? undefined : type} value={value} onChange={onChange} rows={textarea ? 5 : undefined} aria-invalid={!!error} aria-describedby={error ? `${name}-error` : undefined} />
+      <Tag
+        ref={textarea ? areaRef : undefined}
+        id={name}
+        name={name}
+        type={textarea ? undefined : type}
+        value={value}
+        onChange={onChange}
+        rows={textarea ? 1 : undefined}
+        className={textarea && autoGrow ? "auto-grow-textarea" : undefined}
+        aria-invalid={!!error}
+        aria-describedby={error ? `${name}-error` : undefined}
+      />
       <label htmlFor={name}>{label}</label>
       {error && (
         <span id={`${name}-error`} className="field-error" role="alert">
@@ -2162,33 +2211,66 @@ function FloatingField({ label, type = "text", name, value, onChange, error, tex
   );
 }
 
-function Contact() {
-  const [form, setForm] = useState({ name: "", email: "", message: "" });
-  const [errors, setErrors] = useState({});
-  const [status, setStatus] = useState("idle");
+const CONTACT_FORM_NAME = "contact";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+function Contact({ reduced }) {
+  const [form, setForm] = useState({ name: "", email: "", subject: "", message: "", "bot-field": "" });
+  const [errors, setErrors] = useState({});
+  // idle -> sending -> sent | error
+  const [status, setStatus] = useState("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const resetTimer = useRef(null);
+
+  useEffect(() => () => window.clearTimeout(resetTimer.current), []);
+
+  const update = (key) => (e) => {
+    const val = e.target.value;
+    setForm((f) => ({ ...f, [key]: val }));
+    setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+  };
 
   const validate = () => {
     const next = {};
     if (!form.name.trim()) next.name = "Please enter your name.";
-    if (!form.email.trim()) next.email = "Please enter your email.";
-    else if (!/^\S+@\S+\.\S+$/.test(form.email)) next.email = "Enter a valid email address.";
-    if (!form.message.trim()) next.message = "Let me know what you'd like to build.";
+    if (!form.email.trim()) next.email = "Please enter a valid email address.";
+    else if (!EMAIL_PATTERN.test(form.email)) next.email = "Please enter a valid email address.";
+    if (!form.message.trim()) next.message = "Please enter a message.";
     setErrors(next);
     return Object.keys(next).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Honeypot tripped — a bot filled a field real visitors never see.
+    // Fail silently rather than tipping the bot off or surfacing an error.
+    if (form["bot-field"]) return;
+
+    if (status === "sending") return;
     if (!validate()) return;
+
     setStatus("sending");
-    
-    setTimeout(() => {
+    setErrorMessage("");
+
+    try {
+      const response = await submitToNetlifyForm(CONTACT_FORM_NAME, {
+        name: form.name,
+        email: form.email,
+        subject: form.subject,
+        message: form.message,
+      });
+
+      if (!response.ok) throw new Error(`Netlify responded with status ${response.status}`);
+
       setStatus("sent");
-      setForm({ name: "", email: "", message: "" });
-      setTimeout(() => setStatus("idle"), 4000);
-    }, 1100);
+      setForm({ name: "", email: "", subject: "", message: "", "bot-field": "" });
+      window.clearTimeout(resetTimer.current);
+      resetTimer.current = window.setTimeout(() => setStatus("idle"), 6000);
+    } catch (err) {
+      setStatus("error");
+      setErrorMessage("Something went wrong sending your message. Please try again, or email me directly.");
+    }
   };
 
   return (
@@ -2197,7 +2279,7 @@ function Contact() {
         <SectionHeading eyebrow="Contact" title="Let's build something useful." description="Have a project, opportunity, or collaboration in mind? I'd be happy to connect." />
 
         <div className="contact-grid">
-          <div className="contact-details">
+          <Reveal reduced={reduced} className="contact-details">
             <a className="contact-item" href="mailto:christianmanalo.reyes@gmail.com">
               <Mail size={18} />
               <span>christianmanalo.reyes@gmail.com</span>
@@ -2210,14 +2292,37 @@ function Contact() {
               <MapPin size={18} />
               <span>City of Lipa, Batangas</span>
             </span>
-          </div>
+          </Reveal>
 
-          <form className="contact-form" onSubmit={handleSubmit} noValidate>
+          <Reveal
+            reduced={reduced}
+            delay={120}
+            as="form"
+            className="contact-form"
+            name={CONTACT_FORM_NAME}
+            method="POST"
+            data-netlify="true"
+            data-netlify-honeypot="bot-field"
+            onSubmit={handleSubmit}
+            noValidate
+          >
+            {/* Required so Netlify's form handler knows which registered form this POST belongs to. */}
+            <input type="hidden" name="form-name" value={CONTACT_FORM_NAME} />
+
+            {/* Honeypot: invisible to real visitors (off-screen, unfocusable), but a plain
+                text field bots tend to fill in automatically. Netlify silently drops any
+                submission where this isn't empty. */}
+            <div className="hp-field" aria-hidden="true">
+              <label htmlFor="bot-field">Leave this field blank</label>
+              <input id="bot-field" name="bot-field" type="text" tabIndex={-1} autoComplete="off" value={form["bot-field"]} onChange={update("bot-field")} />
+            </div>
+
             <FloatingField label="Name" name="name" value={form.name} onChange={update("name")} error={errors.name} />
             <FloatingField label="Email" name="email" type="email" value={form.email} onChange={update("email")} error={errors.email} />
-            <FloatingField label="Message" name="message" textarea value={form.message} onChange={update("message")} error={errors.message} />
+            <FloatingField label="Subject" name="subject" value={form.subject} onChange={update("subject")} />
+            <FloatingField label="Message" name="message" textarea autoGrow value={form.message} onChange={update("message")} error={errors.message} />
 
-            <button type="submit" className="btn btn-primary btn-full" disabled={status !== "idle"}>
+            <button type="submit" className="btn btn-primary btn-full" disabled={status === "sending"} aria-busy={status === "sending"}>
               {status === "sending" && (
                 <>
                   <Loader2 size={16} className="spin" /> <span>Sending…</span>
@@ -2225,16 +2330,37 @@ function Contact() {
               )}
               {status === "sent" && (
                 <>
-                  <CheckCircle2 size={16} /> <span>Message sent</span>
+                  <CheckCircle2 size={16} /> <span>Message Sent ✓</span>
                 </>
               )}
-              {status === "idle" && (
+              {(status === "idle" || status === "error") && (
                 <>
                   <span>Send Message</span> <Send size={16} />
                 </>
               )}
             </button>
-          </form>
+
+            <div className="contact-status" role="status" aria-live="polite">
+              {status === "sent" && (
+                <div className="status-box status-success">
+                  <CheckCircle2 size={20} />
+                  <div>
+                    <strong>Message sent successfully!</strong>
+                    <p>Thank you for reaching out. I'll get back to you as soon as possible.</p>
+                  </div>
+                </div>
+              )}
+              {status === "error" && (
+                <div className="status-box status-error">
+                  <AlertCircle size={20} />
+                  <div>
+                    <strong>Message not sent</strong>
+                    <p>{errorMessage}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Reveal>
         </div>
       </div>
     </section>
@@ -2323,7 +2449,7 @@ function App() {
         <Projects reduced={reduced} />
         <Experience reduced={reduced} />
         <Achievements reduced={reduced} />
-        <Contact />
+        <Contact reduced={reduced} />
       </main>
       <Footer />
       <BackToTop />

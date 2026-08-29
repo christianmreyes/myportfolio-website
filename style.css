@@ -1049,19 +1049,72 @@ p { margin: 0; }
 /* ---------- Contact ---------- */
 .contact-grid { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 48px; }
 .contact-details { display: flex; flex-direction: column; gap: 18px; }
-.contact-item { display: flex; align-items: center; gap: 12px; font-size: 14.5px; color: var(--text-muted); padding: 14px 16px; background: var(--surface); border: 1px solid var(--surface-border); border-radius: 12px; transition: border-color 0.25s ease, color 0.25s ease; }
-a.contact-item:hover { border-color: rgba(34,211,238,0.35); color: var(--text); }
+.contact-item { display: flex; align-items: center; gap: 12px; font-size: 14.5px; color: var(--text-muted); padding: 14px 16px; background: var(--surface); border: 1px solid var(--surface-border); border-radius: 12px; transition: border-color 0.25s ease, color 0.25s ease, transform 0.25s ease; }
+a.contact-item:hover { border-color: rgba(34,211,238,0.35); color: var(--text); transform: translateY(-2px); }
 .contact-item svg { color: var(--cyan); flex-shrink: 0; }
 
-.contact-form { display: flex; flex-direction: column; gap: 22px; }
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  background: linear-gradient(180deg, rgba(148,197,224,0.05), rgba(148,197,224,0.015));
+  border: 1px solid var(--surface-border);
+  border-radius: 18px;
+  padding: 28px;
+  backdrop-filter: blur(6px);
+}
+
+/* Honeypot: physically present for Netlify's spam filter to see, but
+   invisible and unreachable for real visitors (off-canvas + unfocusable). */
+.hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
 .field { position: relative; }
-.field input, .field textarea { width: 100%; background: var(--surface); border: 1px solid var(--surface-border); border-radius: 10px; padding: 18px 16px 8px; color: var(--text); font-family: var(--font-body); font-size: 14.5px; resize: vertical; transition: border-color 0.25s ease; }
-.field textarea { min-height: 120px; }
-.field input:focus, .field textarea:focus { outline: none; border-color: var(--cyan); }
+.field input, .field textarea {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  padding: 18px 16px 8px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  resize: vertical;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.field input::placeholder, .field textarea::placeholder { color: var(--text-muted); opacity: 0.7; }
+.field textarea { min-height: 120px; max-height: 280px; line-height: 1.55; }
+.field textarea.auto-grow-textarea { resize: none; overflow-y: hidden; transition: height 0.15s ease, border-color 0.25s ease, box-shadow 0.25s ease; overflow-x: hidden; white-space: pre-wrap; word-wrap: break-word; }
+.field input:focus, .field textarea:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(34,211,238,0.14); }
 .field label { position: absolute; left: 16px; top: 16px; font-size: 14.5px; color: var(--text-muted); pointer-events: none; transition: all 0.2s ease; }
 .field input:focus + label, .field textarea:focus + label, .field.filled label { top: 6px; font-size: 11px; color: var(--cyan); }
 .field.has-error input, .field.has-error textarea { border-color: var(--danger); }
+.field.has-error input:focus, .field.has-error textarea:focus { box-shadow: 0 0 0 3px rgba(248,113,113,0.16); }
 .field-error { display: block; margin-top: 6px; font-size: 12px; color: var(--danger); }
+
+.contact-form .btn-primary:active:not(:disabled) { transform: translateY(0) scale(0.98); box-shadow: 0 4px 14px -8px rgba(34,211,238,0.5); }
+
+.contact-status:empty { display: none; }
+.status-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  animation: statusIn 0.35s ease;
+}
+.status-box strong { display: block; font-size: 14px; margin-bottom: 2px; }
+.status-box p { margin: 0; color: inherit; opacity: 0.85; line-height: 1.5; }
+.status-success { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+.status-error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--danger); }
+.status-box svg { flex-shrink: 0; margin-top: 1px; }
+@keyframes statusIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .field textarea.auto-grow-textarea { transition: none; }
+  .status-box { animation: none; }
+  .contact-item:hover, .contact-form .btn-primary:hover, .contact-form .btn-primary:active { transform: none; }
+}
 
 /* ---------- Footer ---------- */
 .footer { padding: 50px 24px 28px; border-top: 1px solid var(--surface-border); }
@@ -1108,6 +1161,8 @@ a.contact-item:hover { border-color: rgba(34,211,238,0.35); color: var(--text); 
   .experience-visual { padding: 36px 16px; gap: 14px; }
   .confidential-typewriter-wrap { max-width: 320px; }
   .confidential-typewriter { font-size: 11.5px; }
+  .contact-form { padding: 22px 18px; }
+  .status-box { padding: 12px 14px; }
   .achievements-gallery { padding: 30px 20px; }
   .gallery-carousel-stage { height: 320px; --gallery-offset-x: 84px; --gallery-offset-z: 100px; --gallery-rotate-y: 25deg; }
   .gallery-card { width: 186px; height: 244px; }
