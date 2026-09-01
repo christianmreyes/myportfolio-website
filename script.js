@@ -33,6 +33,7 @@ const Phone = (p) => <Icon {...p}><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15
 const MapPin = (p) => <Icon {...p}><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" /></Icon>;
 const Github = (p) => <Icon {...p}><path d="M9 19c-4 1.2-4-2-6-2m12 4v-3.2c0-.9.3-1.5.7-1.8-2.4-.3-5-1.2-5-5.4 0-1.2.4-2.1 1.1-2.9-.1-.3-.5-1.5.1-3.1 0 0 .9-.3 3 1.1a10.2 10.2 0 0 1 5.4 0c2.1-1.4 3-1.1 3-1.1.6 1.6.2 2.8.1 3.1.7.8 1.1 1.7 1.1 2.9 0 4.2-2.6 5.1-5 5.4.4.4.8 1.1.8 2.2V19" /></Icon>;
 const Linkedin = (p) => <Icon {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="7" y1="10" x2="7" y2="17" /><circle cx="7" cy="7" r="0.6" fill="currentColor" /><path d="M11 17v-4.5a2 2 0 0 1 4 0V17" /><line x1="11" y1="10" x2="11" y2="17" /></Icon>;
+const FileText = (p) => <Icon {...p}><path d="M7 3h6l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><polyline points="13 3 13 8 18 8" /><line x1="8.5" y1="13" x2="15" y2="13" /><line x1="8.5" y1="16.5" x2="15" y2="16.5" /></Icon>;
 const ChevronUp = (p) => <Icon {...p}><polyline points="6 15 12 9 18 15" /></Icon>;
 const ExternalLink = (p) => <Icon {...p}><path d="M14 4h6v6" /><line x1="20" y1="4" x2="11" y2="13" /><path d="M19 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" /></Icon>;
 const Code2 = (p) => <Icon {...p}><polyline points="9 8 5 12 9 16" /><polyline points="15 8 19 12 15 16" /></Icon>;
@@ -701,6 +702,21 @@ function Navbar({ activeSection }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Lock background scroll while the mobile drawer is open, and allow Escape to close it.
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
   const handleNav = (id) => (e) => {
     e.preventDefault();
     setOpen(false);
@@ -731,7 +747,13 @@ function Navbar({ activeSection }) {
         </button>
       </nav>
 
-      <div className={`nav-mobile ${open ? "open" : ""}`}>
+      <div
+        className={`nav-backdrop ${open ? "open" : ""}`}
+        onClick={() => setOpen(false)}
+        aria-hidden="true"
+      />
+
+      <div className={`nav-mobile ${open ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="Mobile navigation">
         {NAV_LINKS.map((link) => (
           <a key={link.id} href={`#${link.id}`} onClick={handleNav(link.id)} className={activeSection === link.id ? "active" : ""}>
             {link.label}
@@ -875,7 +897,7 @@ function Hero({ reduced }) {
       <div className="hero-inner">
         <div className="hero-copy">
           <Reveal reduced={reduced} className="hero-kicker">
-            <Sparkles size={14} /> Software & Mobile Application Development
+            <span className="kicker-dot" aria-hidden="true" /> Software & Mobile Application Development
           </Reveal>
 
           <Reveal reduced={reduced} delay={80} as="h1" className="hero-title">
@@ -993,7 +1015,10 @@ function About({ reduced }) {
             </div>
 
             <h3>Christian M. Reyes</h3>
-            <p className="profile-role">Computer Science Graduate</p>
+            <div className="profile-role-row">
+              <p className="profile-role">Computer Science Graduate</p>
+              <Badge>Open to work</Badge>
+            </div>
             <div className="profile-stats">
               {STATS.map((s) => (
                 <div key={s.label} className="profile-stat">
@@ -1019,7 +1044,9 @@ function About({ reduced }) {
               const IconComp = a.icon;
               return (
                 <Reveal reduced={reduced} delay={i * 70} key={a.title} className="achievement-card">
-                  <IconComp size={18} className="achievement-icon" />
+                  <span className="achievement-icon-wrap">
+                    <IconComp size={16} className="achievement-icon" />
+                  </span>
                   <div>
                     <h4>{a.title}</h4>
                     <p>{a.detail}</p>
@@ -1115,6 +1142,37 @@ function Skills({ reduced }) {
               );
             })}
           </div>
+
+          {/* Mobile-only: a seamless looping marquee (hidden on larger screens via CSS)
+              so skill labels never get clipped on narrow phone widths. The item list
+              is duplicated once so the loop restarts with no visible jump. */}
+          <div className="skills-marquee" key={`${activeTab}-marquee`}>
+            <div className="skills-marquee-track">
+              {[...activeCategory.items, ...activeCategory.items].map((skill, index) => {
+                const Fallback = skill.fallback || Code2;
+                const isDuplicate = index >= activeCategory.items.length;
+                return (
+                  <div
+                    className="skill-card-modern marquee-item"
+                    key={`${skill.name}-${index}`}
+                    aria-hidden={isDuplicate}
+                  >
+                    <div className="skill-icon-wrapper">
+                      {skill.iconUrl ? (
+                        <img src={skill.iconUrl} alt="" className="skill-icon-img" loading="lazy" />
+                      ) : (
+                        <Fallback size={22} className="skill-icon-fallback" />
+                      )}
+                    </div>
+                    <div className="skill-content">
+                      <span className="skill-name">{skill.name}</span>
+                      <span className="skill-note">{skill.note}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1124,25 +1182,6 @@ function Skills({ reduced }) {
 /* ----------------------------------------------------------------------- */
 /* PROJECTS                                                                 */
 /* ----------------------------------------------------------------------- */
-
-function PlaceholderLink({ label, icon: IconComp }) {
-  const [note, setNote] = useState(false);
-  return (
-    <span className="placeholder-link-wrap">
-      <button
-        type="button"
-        className="btn btn-outline"
-        onClick={() => {
-          setNote(true);
-          setTimeout(() => setNote(false), 3200);
-        }}
-      >
-        <IconComp size={15} /> {label}
-      </button>
-      {note && <span className="inline-note">Placeholder link — connect your real URL.</span>}
-    </span>
-  );
-}
 
 /* ----------------------------------------------------------------------- */
 /* PHONE MOCKUP 3D CAROUSEL                                                 */
@@ -1374,7 +1413,7 @@ function PhoneCarousel({ media, appName, appLogo, showLogo, AppIcon, onLogoError
 /* media shown in the phone carousel with a smooth 3D fade/slide transition.*/
 /* ----------------------------------------------------------------------- */
 
-function PortalSwitcher({ portals, activeIndex, onSelect, disabled }) {
+function PortalSwitcher({ portals, activeIndex, onSelect }) {
   return (
     <div className="portal-switcher" role="tablist" aria-label="Select portal view">
       <div
@@ -1387,7 +1426,6 @@ function PortalSwitcher({ portals, activeIndex, onSelect, disabled }) {
           type="button"
           role="tab"
           aria-selected={i === activeIndex}
-          disabled={disabled}
           className={`portal-switcher-btn ${i === activeIndex ? "active" : ""}`}
           onClick={() => onSelect(i)}
         >
@@ -1400,29 +1438,39 @@ function PortalSwitcher({ portals, activeIndex, onSelect, disabled }) {
 
 function ProjectMockups({ project, showLogo, AppIcon, onLogoError, reduced }) {
   const hasPortals = Array.isArray(project.portals) && project.portals.length > 0;
+  // portalIndex drives the tab UI (indicator + active state) and updates the
+  // instant a tab is clicked, so the button always feels responsive.
+  // displayIndex drives which portal's media is actually rendered, and lags
+  // behind portalIndex by one short crossfade so the swap never flickers.
   const [portalIndex, setPortalIndex] = useState(0);
-  const [switching, setSwitching] = useState(false);
-  const switchTimeoutRef = useRef(null);
+  const [displayIndex, setDisplayIndex] = useState(0);
+  const [fading, setFading] = useState(false);
+  const swapTimeoutRef = useRef(null);
 
   useEffect(() => () => {
-    if (switchTimeoutRef.current) clearTimeout(switchTimeoutRef.current);
+    if (swapTimeoutRef.current) clearTimeout(swapTimeoutRef.current);
   }, []);
 
   const selectPortal = (i) => {
-    if (i === portalIndex || switching) return;
+    if (i === portalIndex) return;
+    setPortalIndex(i); // tab + indicator respond immediately, every click
+
     if (reduced) {
-      setPortalIndex(i);
+      setDisplayIndex(i);
       return;
     }
-    setSwitching(true);
-    if (switchTimeoutRef.current) clearTimeout(switchTimeoutRef.current);
-    switchTimeoutRef.current = setTimeout(() => {
-      setPortalIndex(i);
-      setSwitching(false);
-    }, 340);
+
+    setFading(true);
+    if (swapTimeoutRef.current) clearTimeout(swapTimeoutRef.current);
+    swapTimeoutRef.current = setTimeout(() => {
+      setDisplayIndex(i);
+      // Let the new frame paint before fading back in so the crossfade
+      // never skips, even on a slower device.
+      requestAnimationFrame(() => setFading(false));
+    }, 130);
   };
 
-  const activePortal = hasPortals ? project.portals[portalIndex] : null;
+  const activePortal = hasPortals ? project.portals[displayIndex] : null;
   const media = hasPortals ? activePortal.media : project.media;
   const carouselKey = hasPortals ? activePortal.id : project.id;
 
@@ -1433,10 +1481,9 @@ function ProjectMockups({ project, showLogo, AppIcon, onLogoError, reduced }) {
           portals={project.portals}
           activeIndex={portalIndex}
           onSelect={selectPortal}
-          disabled={switching}
         />
       )}
-      <div className={`portal-carousel-wrap ${switching ? "is-switching" : ""}`}>
+      <div className={`portal-carousel-wrap ${fading ? "is-switching" : ""}`}>
         <PhoneCarousel
           key={carouselKey}
           media={media}
@@ -1451,6 +1498,7 @@ function ProjectMockups({ project, showLogo, AppIcon, onLogoError, reduced }) {
     </div>
   );
 }
+
 
 function ProjectCard({ project, reduced }) {
   const cardRef = useRef(null);
@@ -1521,10 +1569,6 @@ function ProjectCard({ project, reduced }) {
             {project.tags.map((tag) => (
               <Badge key={tag}>{tag}</Badge>
             ))}
-          </div>
-          <div className="project-actions">
-            <PlaceholderLink label="GitHub Repository" icon={Github} />
-            <PlaceholderLink label="Live Demo" icon={ExternalLink} />
           </div>
         </div>
       </div>
@@ -1749,6 +1793,7 @@ function GalleryCardMedia({ media, CategoryIcon }) {
 function GalleryCarousel({ slides, active, onActiveChange, reduced, onOpenLightbox }) {
   const count = slides.length;
   const [isPaused, setIsPaused] = useState(false);
+  const [frontHover, setFrontHover] = useState(false);
   const pointerRef = useRef({ x: 0, dragging: false });
 
   const goTo = useCallback((i) => onActiveChange(((i % count) + count) % count), [count, onActiveChange]);
@@ -1823,7 +1868,8 @@ function GalleryCarousel({ slides, active, onActiveChange, reduced, onOpenLightb
           const clamped = Math.max(-MAX_VISIBLE_DEPTH, Math.min(MAX_VISIBLE_DEPTH, offset));
           const hidden = absOffset > MAX_VISIBLE_DEPTH;
 
-          const scale = isActive ? 1 : Math.max(0.72, 1 - absOffset * 0.14);
+          const isHoverLift = isActive && frontHover && !reduced;
+          const scale = isActive ? (isHoverLift ? 1.045 : 1) : Math.max(0.72, 1 - absOffset * 0.14);
           const opacity = hidden ? 0 : Math.max(0.32, 1 - absOffset * 0.3);
           const zIndex = 100 - absOffset;
 
@@ -1831,9 +1877,10 @@ function GalleryCarousel({ slides, active, onActiveChange, reduced, onOpenLightb
             "translate(-50%, -50%)",
             `translateX(calc(var(--gallery-offset-x) * ${clamped}))`,
             `translateZ(calc(var(--gallery-offset-z) * ${-absOffset}))`,
+            isHoverLift ? "translateZ(28px)" : "",
             `rotateY(calc(var(--gallery-rotate-y) * ${-clamped}))`,
             `scale(${scale})`,
-          ].join(" ");
+          ].filter(Boolean).join(" ");
 
           const categoryMeta = ACHIEVEMENT_CATEGORIES.find((c) => c.id === slide.achievement.category);
           const media = slide.image;
@@ -1841,9 +1888,11 @@ function GalleryCarousel({ slides, active, onActiveChange, reduced, onOpenLightb
           return (
             <div
               key={slide.key}
-              className={`gallery-card ${isActive ? "is-active" : ""}`}
+              className={`gallery-card ${isActive ? "is-active" : ""} ${isHoverLift ? "is-hover-lift" : ""}`}
               style={{ transform, opacity, zIndex, pointerEvents: hidden ? "none" : "auto" }}
               onClick={() => (isActive ? onOpenLightbox(media) : goTo(i))}
+              onMouseEnter={() => isActive && setFrontHover(true)}
+              onMouseLeave={() => setFrontHover(false)}
               role="group"
               aria-roledescription="slide"
               aria-label={`${slide.achievement.title}, photo ${slide.indexInGroup + 1} of ${slide.totalInGroup}`}
@@ -1856,8 +1905,8 @@ function GalleryCarousel({ slides, active, onActiveChange, reduced, onOpenLightb
                 </span>
               )}
               {isActive && media && media.src && (
-                <span className="gallery-card-zoom-hint">
-                  <ImageIcon size={12} /> Click to enlarge
+                <span className="gallery-card-zoom-hint" aria-hidden="true">
+                  <ImageIcon size={13} />
                 </span>
               )}
             </div>
@@ -1991,6 +2040,8 @@ function AchievementsGallery({ items, reduced, jumpToId, jumpToken }) {
 
   if (slides.length === 0) return null;
   const activeSlide = slides[active] || slides[0];
+  const lightboxCategoryMeta = ACHIEVEMENT_CATEGORIES.find((c) => c.id === activeSlide.achievement.category);
+  const LightboxCategoryIcon = lightboxCategoryMeta ? lightboxCategoryMeta.icon : Award;
 
   return (
     <div className="achievements-gallery" ref={containerRef}>
@@ -2002,12 +2053,19 @@ function AchievementsGallery({ items, reduced, jumpToId, jumpToken }) {
           <button className="lightbox-close" onClick={() => setLightboxMedia(null)} aria-label="Close image">
             <XIcon size={28} />
           </button>
-          <img
-            src={lightboxMedia.src}
-            alt={lightboxMedia.alt || ""}
-            className="gallery-lightbox-image"
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="gallery-lightbox-card" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={lightboxMedia.src}
+              alt={lightboxMedia.alt || ""}
+              className="gallery-lightbox-image"
+            />
+            <div className="gallery-lightbox-caption">
+              <span className="gallery-lightbox-category">
+                <LightboxCategoryIcon size={13} /> {lightboxCategoryMeta ? lightboxCategoryMeta.label : activeSlide.achievement.category}
+              </span>
+              <h4>{activeSlide.achievement.title}</h4>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -2281,17 +2339,26 @@ function Contact({ reduced }) {
         <div className="contact-grid">
           <Reveal reduced={reduced} className="contact-details">
             <a className="contact-item" href="mailto:christianmanalo.reyes@gmail.com">
-              <Mail size={18} />
+              <span className="contact-item-icon"><Mail size={17} /></span>
               <span>christianmanalo.reyes@gmail.com</span>
             </a>
             <a className="contact-item" href="tel:09766586288">
-              <Phone size={18} />
+              <span className="contact-item-icon"><Phone size={17} /></span>
               <span>0976 658 6288</span>
             </a>
             <span className="contact-item">
-              <MapPin size={18} />
+              <span className="contact-item-icon"><MapPin size={17} /></span>
               <span>City of Lipa, Batangas</span>
             </span>
+            <a
+              className="contact-item"
+              href="https://www.linkedin.com/in/christian-reyes-b64126397/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="contact-item-icon"><Linkedin size={17} /></span>
+              <span>linkedin.com/in/christian-reyes</span>
+            </a>
           </Reveal>
 
           <Reveal
@@ -2375,10 +2442,12 @@ function Footer() {
   return (
     <footer className="footer">
       <div className="footer-inner">
-        <div>
-          <img src="images/profile-logo.png" alt="CR Logo" className="brand-mark small" />
-          <p className="footer-name">Christian M. Reyes</p>
-          <p className="footer-role">BS Computer Science Graduate</p>
+        <div className="footer-identity">
+          <img src="images/profile-logo.png" alt="Christian M. Reyes" className="footer-avatar" />
+          <div>
+            <p className="footer-name">Christian M. Reyes</p>
+            <p className="footer-role">BS Computer Science Graduate</p>
+          </div>
         </div>
 
         <ul className="footer-links">
@@ -2398,10 +2467,21 @@ function Footer() {
         </ul>
 
         <div className="footer-socials">
-          <a href="#" aria-label="GitHub (placeholder)" title="Placeholder — add your GitHub URL">
-            <Github size={18} />
+          <a
+            href="files/Christian_Reyes_Resume.pdf"
+            download="Christian_Reyes_Resume.pdf"
+            aria-label="Download resume"
+            title="Download resume"
+          >
+            <FileText size={18} />
           </a>
-          <a href="#" aria-label="LinkedIn (placeholder)" title="Placeholder — add your LinkedIn URL">
+          <a
+            href="https://www.linkedin.com/in/christian-reyes-b64126397"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="LinkedIn profile (opens in a new tab)"
+            title="LinkedIn profile"
+          >
             <Linkedin size={18} />
           </a>
         </div>
