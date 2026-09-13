@@ -2319,6 +2319,62 @@ const COMMON_EMAIL_DOMAINS = [
   "live.com",
 ];
 
+// Stage 2: obviously fake/throwaway addresses. This is a denylist of
+// well-known disposable-email providers, checked entirely client-side —
+// it never touches legitimate providers or custom business domains.
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  "mailinator.com",
+  "guerrillamail.com",
+  "10minutemail.com",
+  "tempmail.com",
+  "temp-mail.org",
+  "throwawaymail.com",
+  "yopmail.com",
+  "trashmail.com",
+  "getnada.com",
+  "dispostable.com",
+  "fakeinbox.com",
+  "sharklasers.com",
+  "maildrop.cc",
+  "mailnesia.com",
+  "mintemail.com",
+]);
+
+// Stage 3: real domain-existence verification. Browsers can't do DNS
+// lookups, so this calls a small Netlify Function (see
+// netlify/functions/verify-email-domain.js) that checks whether the
+// domain has mail-capable DNS records (MX, or a fallback A/AAAA record).
+// No API key is needed — it's a plain DNS lookup on Netlify's own servers.
+// Results are cached per domain for the life of the page so re-checking
+// the same email (e.g. on blur, then again on submit) is instant.
+const domainVerificationCache = new Map();
+
+async function verifyEmailDomainExists(email) {
+  const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+  if (domainVerificationCache.has(domain)) return domainVerificationCache.get(domain);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(`/.netlify/functions/verify-email-domain?domain=${encodeURIComponent(domain)}`, {
+      signal: controller.signal,
+    });
+    window.clearTimeout(timeoutId);
+
+    if (!response.ok) return "unknown";
+    const data = await response.json();
+    const result = data.valid ? "valid" : "invalid";
+    domainVerificationCache.set(domain, result);
+    return result;
+  } catch (err) {
+    // The check itself failed (offline preview, function unavailable, timeout,
+    // etc.) — this is NOT proof the domain is fake, so don't punish the
+    // visitor for our infrastructure. Treat it as unverifiable and let format
+    // + disposable-domain checks be the deciding factor instead.
+    return "unknown";
+  }
+}
+
 function levenshteinDistance(a, b) {
   const rows = a.length + 1;
   const cols = b.length + 1;
@@ -2368,10 +2424,18 @@ function Contact({ reduced }) {
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "", "bot-field": "" });
   const [errors, setErrors] = useState({});
   const [emailSuggestion, setEmailSuggestion] = useState(null);
-  // idle -> sending -> sent | error
+  // idle -> checking -> valid | invalid (best-effort, updated on blur;
+  // the authoritative check always re-runs at submit time)
+  const [emailCheckState, setEmailCheckState] = useState("idle");
+  // idle -> verifying -> sending -> sent | error
   const [status, setStatus] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const resetTimer = useRef(null);
+  const formRef = useRef(form);
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
   useEffect(() => () => window.clearTimeout(resetTimer.current), []);
 
@@ -2379,7 +2443,10 @@ function Contact({ reduced }) {
     const val = e.target.value;
     setForm((f) => ({ ...f, [key]: val }));
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
-    if (key === "email") setEmailSuggestion(null);
+    if (key === "email") {
+      setEmailSuggestion(null);
+      setEmailCheckState("idle");
+    }
   };
 
   const validate = () => {
@@ -2394,6 +2461,12 @@ function Contact({ reduced }) {
     if (!email) next.email = "Please enter your email address.";
     else if (email.length > MAX_EMAIL_LENGTH) next.email = "That email address is too long.";
     else if (!EMAIL_PATTERN.test(email)) next.email = "Please enter a valid email address, e.g. name@example.com.";
+    else {
+      const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+      if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) {
+        next.email = "Please use a permanent email address so I can get back to you.";
+      }
+    }
 
     if (!subject) next.subject = "Please enter a subject.";
 
@@ -2403,12 +2476,34 @@ function Contact({ reduced }) {
     return next;
   };
 
-  const handleBlur = (key) => () => {
-    setErrors((prev) => ({ ...prev, [key]: validate()[key] }));
-    if (key === "email") {
-      const email = form.email.trim();
-      const hasError = validate().email;
-      setEmailSuggestion(!hasError ? suggestEmailCorrection(email) : null);
+  // Best-effort check on blur, purely for early feedback. It never blocks
+  // anything by itself — the submit handler always re-verifies before
+  // sending, so this can't be bypassed by skipping the blur event.
+  const handleBlur = (key) => async () => {
+    const fieldErrors = validate();
+    setErrors((prev) => ({ ...prev, [key]: fieldErrors[key] }));
+
+    if (key !== "email") return;
+
+    const email = form.email.trim();
+    if (fieldErrors.email) {
+      setEmailCheckState("idle");
+      return;
+    }
+
+    setEmailSuggestion(suggestEmailCorrection(email));
+    setEmailCheckState("checking");
+
+    const domainStatus = await verifyEmailDomainExists(email);
+
+    // Ignore this result if the user has since changed the email field.
+    if (formRef.current.email.trim() !== email) return;
+
+    if (domainStatus === "invalid") {
+      setErrors((prev) => ({ ...prev, email: "Please enter a valid and existing email address." }));
+      setEmailCheckState("invalid");
+    } else {
+      setEmailCheckState(domainStatus === "valid" ? "valid" : "idle");
     }
   };
 
@@ -2417,6 +2512,7 @@ function Contact({ reduced }) {
     setForm((f) => ({ ...f, email: emailSuggestion }));
     setErrors((prev) => ({ ...prev, email: undefined }));
     setEmailSuggestion(null);
+    setEmailCheckState("idle");
   };
 
   const handleSubmit = async (e) => {
@@ -2426,14 +2522,37 @@ function Contact({ reduced }) {
     // Fail silently rather than tipping the bot off or surfacing an error.
     if (form["bot-field"]) return;
 
-    if (status === "sending") return;
+    if (status === "sending" || status === "verifying") return;
 
     const nextErrors = validate();
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    setStatus("sending");
+    // Authoritative domain-existence check. This always re-runs here (even
+    // if the blur check already ran) so validation can't be skipped by
+    // submitting before blur fires, and it's cheap thanks to the cache.
+    setStatus("verifying");
     setErrorMessage("");
+
+    const email = form.email.trim();
+    const domainStatus = await verifyEmailDomainExists(email);
+
+    if (formRef.current.email.trim() !== email) {
+      // The visitor edited the email while the check was in flight —
+      // re-validate against what's actually in the field now instead of
+      // sending stale results.
+      setStatus("idle");
+      return handleSubmit(e);
+    }
+
+    if (domainStatus === "invalid") {
+      setErrors((prev) => ({ ...prev, email: "Please enter a valid and existing email address." }));
+      setEmailCheckState("invalid");
+      setStatus("idle");
+      return;
+    }
+
+    setStatus("sending");
 
     try {
       // The "email" and "subject" field names are reserved by Netlify Forms:
@@ -2454,6 +2573,7 @@ function Contact({ reduced }) {
       setForm({ name: "", email: "", subject: "", message: "", "bot-field": "" });
       setErrors({});
       setEmailSuggestion(null);
+      setEmailCheckState("idle");
       window.clearTimeout(resetTimer.current);
       resetTimer.current = window.setTimeout(() => setStatus("idle"), 6000);
     } catch (err) {
@@ -2538,6 +2658,9 @@ function Contact({ reduced }) {
               maxLength={MAX_EMAIL_LENGTH}
               autoComplete="email"
             />
+            {!errors.email && !emailSuggestion && emailCheckState === "checking" && (
+              <p className="field-hint">Checking that this email address can receive mail…</p>
+            )}
             {!errors.email && emailSuggestion && (
               <p className="field-suggestion">
                 Did you mean{" "}
@@ -2570,7 +2693,17 @@ function Contact({ reduced }) {
               maxLength={MAX_MESSAGE_LENGTH}
             />
 
-            <button type="submit" className="btn btn-primary btn-full" disabled={status === "sending"} aria-busy={status === "sending"}>
+            <button
+              type="submit"
+              className="btn btn-primary btn-full"
+              disabled={status === "sending" || status === "verifying"}
+              aria-busy={status === "sending" || status === "verifying"}
+            >
+              {status === "verifying" && (
+                <>
+                  <Loader2 size={16} className="spin" /> <span>Checking email…</span>
+                </>
+              )}
               {status === "sending" && (
                 <>
                   <Loader2 size={16} className="spin" /> <span>Sending…</span>

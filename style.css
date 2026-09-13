@@ -1367,6 +1367,7 @@ a.contact-item:hover .contact-item-icon { transform: scale(1.08) rotate(-4deg); 
 .field-required-mark { color: var(--cyan); }
 
 .field-suggestion { margin: -10px 0 14px; font-size: 12.5px; color: var(--text-muted); }
+.field-hint { margin: -10px 0 14px; font-size: 12.5px; color: var(--text-muted); }
 .field-suggestion-btn {
   background: none;
   border: none;
