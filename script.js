@@ -2232,7 +2232,22 @@ function submitToNetlifyForm(formName, fields) {
   });
 }
 
-function FloatingField({ label, type = "text", name, value, onChange, error, textarea, autoGrow, minHeight = 120, maxHeight = 280 }) {
+function FloatingField({
+  label,
+  type = "text",
+  name,
+  value,
+  onChange,
+  onBlur,
+  error,
+  required,
+  maxLength,
+  autoComplete,
+  textarea,
+  autoGrow,
+  minHeight = 120,
+  maxHeight = 280,
+}) {
   const Tag = textarea ? "textarea" : "input";
   const areaRef = useRef(null);
 
@@ -2254,12 +2269,19 @@ function FloatingField({ label, type = "text", name, value, onChange, error, tex
         type={textarea ? undefined : type}
         value={value}
         onChange={onChange}
+        onBlur={onBlur}
+        required={required}
+        maxLength={maxLength}
+        autoComplete={autoComplete}
         rows={textarea ? 1 : undefined}
         className={textarea && autoGrow ? "auto-grow-textarea" : undefined}
         aria-invalid={!!error}
         aria-describedby={error ? `${name}-error` : undefined}
       />
-      <label htmlFor={name}>{label}</label>
+      <label htmlFor={name}>
+        {label}
+        {required && <span className="field-required-mark" aria-hidden="true"> *</span>}
+      </label>
       {error && (
         <span id={`${name}-error`} className="field-error" role="alert">
           {error}
@@ -2270,11 +2292,82 @@ function FloatingField({ label, type = "text", name, value, onChange, error, tex
 }
 
 const CONTACT_FORM_NAME = "contact";
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// This is the same email-format pattern browsers use to validate
+// <input type="email">. It requires a properly formed local part, an "@",
+// and a domain with at least one dot and a real label on each side of it —
+// so "test@", "hello@", and "abc" are all rejected, but it stays permissive
+// enough to accept any legitimate provider or custom domain.
+const EMAIL_PATTERN =
+  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+
+const MAX_EMAIL_LENGTH = 254; // RFC 5321 limit
+const MAX_NAME_LENGTH = 100;
+const MAX_SUBJECT_LENGTH = 150;
+const MAX_MESSAGE_LENGTH = 5000;
+
+// Common providers used to gently catch typos (gmial.com, yaho.com, etc.)
+// without ever blocking submission — this only ever offers a suggestion.
+const COMMON_EMAIL_DOMAINS = [
+  "gmail.com",
+  "yahoo.com",
+  "hotmail.com",
+  "outlook.com",
+  "icloud.com",
+  "aol.com",
+  "protonmail.com",
+  "live.com",
+];
+
+function levenshteinDistance(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp = Array.from({ length: rows }, () => new Array(cols).fill(0));
+  for (let i = 0; i < rows; i++) dp[i][0] = i;
+  for (let j = 0; j < cols; j++) dp[0][j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[rows - 1][cols - 1];
+}
+
+/**
+ * Suggests a corrected email address when the domain looks like a one- or
+ * two-character typo of a well-known provider (e.g. "gmial.com" -> "gmail.com").
+ * Returns null whenever the domain is already fine, unknown, or too different
+ * to guess confidently — legitimate/uncommon domains are never "corrected".
+ */
+function suggestEmailCorrection(email) {
+  const at = email.lastIndexOf("@");
+  if (at === -1) return null;
+  const domain = email.slice(at + 1).toLowerCase();
+  if (!domain || COMMON_EMAIL_DOMAINS.includes(domain)) return null;
+
+  let bestMatch = null;
+  let bestDistance = Infinity;
+  for (const known of COMMON_EMAIL_DOMAINS) {
+    const distance = levenshteinDistance(domain, known);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = known;
+    }
+  }
+
+  if (bestMatch && bestDistance > 0 && bestDistance <= 2 && domain.length >= 5) {
+    return email.slice(0, at + 1) + bestMatch;
+  }
+  return null;
+}
 
 function Contact({ reduced }) {
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "", "bot-field": "" });
   const [errors, setErrors] = useState({});
+  const [emailSuggestion, setEmailSuggestion] = useState(null);
   // idle -> sending -> sent | error
   const [status, setStatus] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -2286,16 +2379,44 @@ function Contact({ reduced }) {
     const val = e.target.value;
     setForm((f) => ({ ...f, [key]: val }));
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+    if (key === "email") setEmailSuggestion(null);
   };
 
   const validate = () => {
+    const name = form.name.trim();
+    const email = form.email.trim();
+    const subject = form.subject.trim();
+    const message = form.message.trim();
     const next = {};
-    if (!form.name.trim()) next.name = "Please enter your name.";
-    if (!form.email.trim()) next.email = "Please enter a valid email address.";
-    else if (!EMAIL_PATTERN.test(form.email)) next.email = "Please enter a valid email address.";
-    if (!form.message.trim()) next.message = "Please enter a message.";
-    setErrors(next);
-    return Object.keys(next).length === 0;
+
+    if (!name) next.name = "Please enter your name.";
+
+    if (!email) next.email = "Please enter your email address.";
+    else if (email.length > MAX_EMAIL_LENGTH) next.email = "That email address is too long.";
+    else if (!EMAIL_PATTERN.test(email)) next.email = "Please enter a valid email address, e.g. name@example.com.";
+
+    if (!subject) next.subject = "Please enter a subject.";
+
+    if (!message) next.message = "Please enter a message.";
+    else if (message.length < 10) next.message = "Please add a little more detail to your message.";
+
+    return next;
+  };
+
+  const handleBlur = (key) => () => {
+    setErrors((prev) => ({ ...prev, [key]: validate()[key] }));
+    if (key === "email") {
+      const email = form.email.trim();
+      const hasError = validate().email;
+      setEmailSuggestion(!hasError ? suggestEmailCorrection(email) : null);
+    }
+  };
+
+  const applyEmailSuggestion = () => {
+    if (!emailSuggestion) return;
+    setForm((f) => ({ ...f, email: emailSuggestion }));
+    setErrors((prev) => ({ ...prev, email: undefined }));
+    setEmailSuggestion(null);
   };
 
   const handleSubmit = async (e) => {
@@ -2306,23 +2427,33 @@ function Contact({ reduced }) {
     if (form["bot-field"]) return;
 
     if (status === "sending") return;
-    if (!validate()) return;
+
+    const nextErrors = validate();
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
 
     setStatus("sending");
     setErrorMessage("");
 
     try {
+      // The "email" and "subject" field names are reserved by Netlify Forms:
+      // Netlify automatically sets the notification email's Reply-To header
+      // to the "email" value and uses "subject" as the actual email subject
+      // line (instead of the generic "New submission from contact" default),
+      // as long as no static subject override is set in the Netlify UI.
       const response = await submitToNetlifyForm(CONTACT_FORM_NAME, {
-        name: form.name,
-        email: form.email,
-        subject: form.subject,
-        message: form.message,
+        name: form.name.trim(),
+        email: form.email.trim(),
+        subject: form.subject.trim(),
+        message: form.message.trim(),
       });
 
       if (!response.ok) throw new Error(`Netlify responded with status ${response.status}`);
 
       setStatus("sent");
       setForm({ name: "", email: "", subject: "", message: "", "bot-field": "" });
+      setErrors({});
+      setEmailSuggestion(null);
       window.clearTimeout(resetTimer.current);
       resetTimer.current = window.setTimeout(() => setStatus("idle"), 6000);
     } catch (err) {
@@ -2384,10 +2515,60 @@ function Contact({ reduced }) {
               <input id="bot-field" name="bot-field" type="text" tabIndex={-1} autoComplete="off" value={form["bot-field"]} onChange={update("bot-field")} />
             </div>
 
-            <FloatingField label="Name" name="name" value={form.name} onChange={update("name")} error={errors.name} />
-            <FloatingField label="Email" name="email" type="email" value={form.email} onChange={update("email")} error={errors.email} />
-            <FloatingField label="Subject" name="subject" value={form.subject} onChange={update("subject")} />
-            <FloatingField label="Message" name="message" textarea autoGrow value={form.message} onChange={update("message")} error={errors.message} />
+            <FloatingField
+              label="Name"
+              name="name"
+              value={form.name}
+              onChange={update("name")}
+              onBlur={handleBlur("name")}
+              error={errors.name}
+              required
+              maxLength={MAX_NAME_LENGTH}
+              autoComplete="name"
+            />
+            <FloatingField
+              label="Email"
+              name="email"
+              type="email"
+              value={form.email}
+              onChange={update("email")}
+              onBlur={handleBlur("email")}
+              error={errors.email}
+              required
+              maxLength={MAX_EMAIL_LENGTH}
+              autoComplete="email"
+            />
+            {!errors.email && emailSuggestion && (
+              <p className="field-suggestion">
+                Did you mean{" "}
+                <button type="button" className="field-suggestion-btn" onClick={applyEmailSuggestion}>
+                  {emailSuggestion}
+                </button>
+                ?
+              </p>
+            )}
+            <FloatingField
+              label="Subject"
+              name="subject"
+              value={form.subject}
+              onChange={update("subject")}
+              onBlur={handleBlur("subject")}
+              error={errors.subject}
+              required
+              maxLength={MAX_SUBJECT_LENGTH}
+            />
+            <FloatingField
+              label="Message"
+              name="message"
+              textarea
+              autoGrow
+              value={form.message}
+              onChange={update("message")}
+              onBlur={handleBlur("message")}
+              error={errors.message}
+              required
+              maxLength={MAX_MESSAGE_LENGTH}
+            />
 
             <button type="submit" className="btn btn-primary btn-full" disabled={status === "sending"} aria-busy={status === "sending"}>
               {status === "sending" && (
@@ -2397,7 +2578,7 @@ function Contact({ reduced }) {
               )}
               {status === "sent" && (
                 <>
-                  <CheckCircle2 size={16} /> <span>Message Sent ✓</span>
+                  <CheckCircle2 size={16} /> <span>Message Sent</span>
                 </>
               )}
               {(status === "idle" || status === "error") && (

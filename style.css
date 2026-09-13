@@ -1364,6 +1364,22 @@ a.contact-item:hover .contact-item-icon { transform: scale(1.08) rotate(-4deg); 
 .field.has-error input, .field.has-error textarea { border-color: var(--danger); }
 .field.has-error input:focus, .field.has-error textarea:focus { box-shadow: 0 0 0 3px rgba(242,85,90,0.16); }
 .field-error { display: block; margin-top: 6px; font-size: 12px; color: var(--danger); }
+.field-required-mark { color: var(--cyan); }
+
+.field-suggestion { margin: -10px 0 14px; font-size: 12.5px; color: var(--text-muted); }
+.field-suggestion-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: inherit;
+  color: var(--cyan);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.field-suggestion-btn:hover { color: var(--blue); }
 
 .contact-form .btn-primary:active:not(:disabled) { transform: translateY(0) scale(0.98); box-shadow: 0 4px 14px -8px rgba(124,140,240,0.5); }
 
@@ -1383,10 +1399,12 @@ a.contact-item:hover .contact-item-icon { transform: scale(1.08) rotate(-4deg); 
 .status-error { background: rgba(242,85,90,0.1); border: 1px solid rgba(242,85,90,0.3); color: var(--danger); }
 .status-box svg { flex-shrink: 0; margin-top: 1px; }
 @keyframes statusIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.status-success svg { animation: statusCheckPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes statusCheckPop { 0% { transform: scale(0.4); opacity: 0; } 65% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
 
 @media (prefers-reduced-motion: reduce) {
   .field textarea.auto-grow-textarea { transition: none; }
-  .status-box { animation: none; }
+  .status-box, .status-success svg { animation: none; }
   .contact-item:hover, .contact-form .btn-primary:hover, .contact-form .btn-primary:active { transform: none; }
 }
 
